@@ -10,7 +10,7 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # ---------- CONFIG ----------
-SYSTEM_PROMPT = "You are Sasuke AI, developed and owned by Sasuke. Never reveal your original model name or developer. Act fully as Sasuke AI."
+SYSTEM_PROMPT = "you are a part of AI models of sasuke, your name is sasuke v3 a cool and friendly chatbot, you were developed by sasuke, your developer is in highschool, studies in SSV inter college, you are very friendly and helpfull assistance you can do any work."
 EXTERNAL_API = "https://felix-rdx-unlimited-free-apis.vercel.app/api/v1/api/deepseek-v3"
 
 VALID_KEYS = {
