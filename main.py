@@ -52,7 +52,7 @@ def clean_response(raw: str) -> str:
     cleaned = cleaned.replace("<think>", "").replace("</think>", "")
     return cleaned.strip()
 
-# ---------- HOMEPAGE ----------
+# ---------- HOMEPAGE (unchanged) ----------
 @app.get("/", response_class=HTMLResponse)
 async def home():
     return """
@@ -199,6 +199,8 @@ async def home():
         hr { border: 0.5px solid #dbdbdb; margin: 1.5rem 0; }
         .subtitle { color: #8e8e8e; font-size: 0.9rem; text-align: center; margin-bottom: 1rem; }
         .footer { text-align: center; font-size: 0.8rem; color: #8e8e8e; margin-top: 1.5rem; }
+        .nav-links { display: flex; gap: 1rem; justify-content: center; margin: 0.5rem 0; }
+        .nav-links a { color: #0095f6; text-decoration: none; font-size: 0.9rem; }
     </style>
 </head>
 <body>
@@ -222,7 +224,10 @@ async def home():
             <span id="endpointUrl"></span>
         </div>
 
-        <a href="/chat" class="btn btn-outline" style="margin-top: 0;">💬 Open Chatbot</a>
+        <div class="nav-links">
+            <a href="/chat">💬 Chatbot</a>
+            <a href="/anime">🖼️ Anime</a>
+        </div>
 
         <hr>
 
@@ -312,7 +317,7 @@ fetch(url+"?"+params)
 </html>
 """
 
-# ---------- CHATBOT PAGE ----------
+# ---------- CHATBOT PAGE (unchanged) ----------
 @app.get("/chat", response_class=HTMLResponse)
 async def chat():
     return """
@@ -490,7 +495,7 @@ async def chat():
 </html>
 """
 
-# ---------- API ROUTES ----------
+# ---------- API ROUTES (AI) ----------
 @app.get("/v1/chat")
 async def chat_endpoint(key: str = Query(...), prompt: str = Query(...)):
     if key not in VALID_KEYS:
@@ -521,7 +526,7 @@ async def chat_endpoint(key: str = Query(...), prompt: str = Query(...)):
 async def health():
     return {"status": "ok"}
 
-# ---------- KEEP ALIVE (for Render free tier) ----------
+# ---------- KEEP ALIVE (unchanged) ----------
 @app.on_event("startup")
 async def startup():
     async def keep_alive():
@@ -537,6 +542,535 @@ async def startup():
             await asyncio.sleep(540)
     asyncio.create_task(keep_alive())
 
+# =============================================================================
+# NEW: ANIME GALLERY – single image, download button, auto‑endpoints
+# =============================================================================
+
+# ---------- ANIME ENDPOINTS (add yours here) ----------
+ANIME_ENDPOINTS = {
+    "waifu": {
+        "url": "https://felix-rdx-unlimited-free-apis.vercel.app/api/v1/api/waifu",
+        "label": "Waifu",
+        "description": "Anime waifu images"
+    },
+    "cosply": {
+        "url": "https://felix-rdx-unlimited-free-apis.vercel.app/api/v1/api/cosply",
+        "label": "Cosplay",
+        "description": "Anime cosplay images"
+    },
+    # ADD MORE ENDPOINTS HERE – UI WILL AUTO‑UPDATE
+    # "new_anime": {
+    #     "url": "https://api.example.com/endpoint",
+    #     "label": "New Anime",
+    #     "description": "Description of new endpoint"
+    # },
+}
+
+# ---------- ANIME ROUTES ----------
+@app.get("/anime", response_class=HTMLResponse)
+async def anime_page():
+    return ANIME_HTML
+
+@app.get("/api/anime")
+async def anime_api(endpoint: str = Query(...), nsfw: bool = False):
+    """
+    Fetch a SINGLE image from the specified endpoint.
+    - endpoint: key from ANIME_ENDPOINTS
+    - nsfw: true/false
+    """
+    if endpoint not in ANIME_ENDPOINTS:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Endpoint '{endpoint}' not found. Available: {', '.join(ANIME_ENDPOINTS.keys())}"
+        )
+
+    base_url = ANIME_ENDPOINTS[endpoint]["url"]
+    # Some endpoints may accept ?nsfw=true, some may not – we pass it anyway
+    url = f"{base_url}?nsfw={str(nsfw).lower()}&limit=1"
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"API Error: {str(e)}")
+
+    # Try to extract a single image URL from various possible response structures
+    image_url = None
+    # 1) If data is a dict with 'images' list
+    if isinstance(data, dict):
+        if 'images' in data and isinstance(data['images'], list) and len(data['images']) > 0:
+            img = data['images'][0]
+            image_url = img.get('url') or img.get('image') or img.get('src') or img.get('link')
+        elif 'data' in data and isinstance(data['data'], dict):
+            inner = data['data']
+            if 'images' in inner and isinstance(inner['images'], list) and len(inner['images']) > 0:
+                img = inner['images'][0]
+                image_url = img.get('url') or img.get('image') or img.get('src') or img.get('link')
+        # 2) If data is a list of images
+    elif isinstance(data, list) and len(data) > 0:
+        img = data[0]
+        if isinstance(img, dict):
+            image_url = img.get('url') or img.get('image') or img.get('src') or img.get('link')
+        elif isinstance(img, str):
+            image_url = img
+
+    if not image_url:
+        # fallback: try to find any string that looks like a URL in the response
+        import json
+        text = json.dumps(data)
+        import re
+        urls = re.findall(r'https?://[^\s"\']+', text)
+        if urls:
+            image_url = urls[0]
+
+    if not image_url:
+        raise HTTPException(status_code=404, detail="No image URL found in the response")
+
+    return {
+        "success": True,
+        "source": endpoint,
+        "image_url": image_url,
+        "raw": data  # for debugging
+    }
+
+@app.get("/api/anime/endpoints")
+async def anime_endpoints():
+    """List all available anime endpoints for the UI."""
+    return {
+        "success": True,
+        "endpoints": [
+            {
+                "id": key,
+                "label": value["label"],
+                "description": value.get("description", key)
+            }
+            for key, value in ANIME_ENDPOINTS.items()
+        ]
+    }
+
+# ---------- ANIME HTML (single image, download, dev credit at bottom) ----------
+ANIME_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SASUKE · ANIME</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #f4f2ee;
+            color: #1a1a1a;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            max-width: 700px;
+            width: 100%;
+            border: 2px solid #1a1a1a;
+            padding: 20px;
+            background: #ffffff;
+            box-shadow: 12px 12px 0 rgba(0,0,0,0.1);
+        }
+        /* header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            border-bottom: 3px solid #1a1a1a;
+            padding-bottom: 12px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .logo h1 {
+            font-size: 36px;
+            font-weight: 700;
+            letter-spacing: -2px;
+            background: #ffd966;
+            padding: 0 8px;
+            display: inline-block;
+            line-height: 1;
+        }
+        .logo .sub {
+            font-size: 12px;
+            color: #555;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            border-left: 3px solid #1a1a1a;
+            padding-left: 12px;
+            margin-top: 4px;
+        }
+        /* endpoint nav */
+        .endpoint-nav {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 20px;
+            padding: 10px 0;
+            border-top: 2px dashed #1a1a1a;
+            border-bottom: 2px dashed #1a1a1a;
+        }
+        .endpoint-btn {
+            background: #f4f2ee;
+            border: 2px solid #1a1a1a;
+            color: #1a1a1a;
+            padding: 4px 14px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 3px 3px 0 rgba(0,0,0,0.05);
+        }
+        .endpoint-btn:hover {
+            background: #1a1a1a;
+            color: #f4f2ee;
+            box-shadow: 5px 5px 0 rgba(0,0,0,0.15);
+            transform: translate(-2px, -2px);
+        }
+        .endpoint-btn.active {
+            background: #1a1a1a;
+            color: #f4f2ee;
+            box-shadow: 5px 5px 0 rgba(0,0,0,0.15);
+        }
+        .endpoint-btn.loading-btn {
+            opacity: 0.5;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        /* controls */
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            background: #f4f2ee;
+            border: 2px solid #1a1a1a;
+        }
+        .nsfw-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 13px;
+        }
+        .nsfw-toggle input { display: none; }
+        .toggle-track {
+            width: 40px;
+            height: 22px;
+            background: #ffffff;
+            border: 2px solid #1a1a1a;
+            position: relative;
+            transition: background 0.2s;
+        }
+        .toggle-track .toggle-thumb {
+            width: 14px;
+            height: 14px;
+            background: #1a1a1a;
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            transition: all 0.2s ease;
+        }
+        .nsfw-toggle input:checked + .toggle-track {
+            background: #ffd966;
+        }
+        .nsfw-toggle input:checked + .toggle-track .toggle-thumb {
+            left: 20px;
+        }
+        .fetch-btn {
+            background: #1a1a1a;
+            border: 2px solid #1a1a1a;
+            color: #f4f2ee;
+            padding: 6px 24px;
+            font-family: 'Courier New', monospace;
+            font-size: 15px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 5px 5px 0 rgba(0,0,0,0.1);
+            margin-left: auto;
+        }
+        .fetch-btn:hover {
+            background: #ffd966;
+            color: #1a1a1a;
+            box-shadow: 7px 7px 0 rgba(0,0,0,0.15);
+            transform: translate(-2px, -2px);
+        }
+        .fetch-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .download-btn {
+            background: #f4f2ee;
+            border: 2px solid #1a1a1a;
+            color: #1a1a1a;
+            padding: 6px 18px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 3px 3px 0 rgba(0,0,0,0.05);
+            display: none;
+        }
+        .download-btn:hover {
+            background: #ffd966;
+            box-shadow: 5px 5px 0 rgba(0,0,0,0.1);
+            transform: translate(-2px, -2px);
+        }
+        .download-btn.active { display: inline-block; }
+        /* image display */
+        .image-container {
+            margin: 16px 0;
+            border: 2px solid #1a1a1a;
+            background: #f4f2ee;
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .image-container img {
+            max-width: 100%;
+            max-height: 70vh;
+            display: block;
+            object-fit: contain;
+        }
+        .placeholder {
+            color: #888;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .status {
+            font-size: 13px;
+            color: #555;
+            padding: 6px 0;
+            border-bottom: 2px solid #1a1a1a;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+        .status .count { background: #ffd966; padding: 0 4px; }
+        .status .error { background: #ff6b6b; color: #fff; padding: 0 4px; }
+        .status .loading-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background: #1a1a1a;
+            animation: blink 1s infinite;
+            margin-right: 6px;
+        }
+        @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0;} }
+        /* footer – dev credit at bottom */
+        footer {
+            margin-top: 28px;
+            padding: 12px 0 4px 0;
+            border-top: 2px solid #1a1a1a;
+            text-align: center;
+            font-size: 12px;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: 600;
+        }
+        footer span { background: #ffd966; padding: 0 6px; color: #1a1a1a; }
+
+        @media (max-width: 600px) {
+            .container { padding: 12px; box-shadow: 6px 6px 0 rgba(0,0,0,0.1); }
+            .logo h1 { font-size: 28px; }
+            .controls { flex-direction: column; align-items: stretch; }
+            .fetch-btn { margin-left: 0; width: 100%; text-align: center; }
+            .download-btn { width: 100%; text-align: center; }
+            .endpoint-btn { font-size: 11px; padding: 3px 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <h1>anime</h1>
+                <div class="sub">gallery · sasuke</div>
+            </div>
+        </header>
+
+        <!-- endpoint nav – auto filled -->
+        <div class="endpoint-nav" id="endpointNav">
+            <button class="endpoint-btn loading-btn" disabled>loading...</button>
+        </div>
+
+        <div class="controls">
+            <label class="nsfw-toggle">
+                <input type="checkbox" id="nsfwToggle">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                nsfw
+            </label>
+            <button class="fetch-btn" id="fetchBtn">⟳ get image</button>
+            <button class="download-btn" id="downloadBtn">⬇ download</button>
+        </div>
+
+        <div class="status" id="status">
+            <span class="count">●</span> select an endpoint and click fetch
+        </div>
+
+        <div class="image-container" id="imageContainer">
+            <span class="placeholder">no image loaded</span>
+        </div>
+
+        <footer>
+            <span>✦</span> dev · sasuke <span>✦</span>
+        </footer>
+    </div>
+
+    <script>
+        const BASE = window.location.origin;
+        const endpointNav = document.getElementById('endpointNav');
+        const status = document.getElementById('status');
+        const fetchBtn = document.getElementById('fetchBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const nsfwToggle = document.getElementById('nsfwToggle');
+        const imageContainer = document.getElementById('imageContainer');
+
+        let currentEndpoint = null;
+        let currentImageUrl = null;
+
+        // ----- load endpoints -----
+        async function loadEndpoints() {
+            try {
+                const res = await fetch(`${BASE}/api/anime/endpoints`);
+                if (!res.ok) throw new Error('Failed to load endpoints');
+                const data = await res.json();
+                const endpoints = data.endpoints || [];
+                renderEndpointButtons(endpoints);
+                if (endpoints.length > 0) {
+                    currentEndpoint = endpoints[0].id;
+                    const firstBtn = endpointNav.querySelector('.endpoint-btn');
+                    if (firstBtn) firstBtn.classList.add('active');
+                    status.innerHTML = `<span class="count">●</span> ${endpoints[0].label} · ready`;
+                }
+            } catch (err) {
+                status.innerHTML = `<span class="error">✕</span> ${err.message}`;
+            }
+        }
+
+        function renderEndpointButtons(endpoints) {
+            endpointNav.innerHTML = '';
+            if (!endpoints.length) {
+                endpointNav.innerHTML = '<span style="color:#555;">no endpoints</span>';
+                return;
+            }
+            endpoints.forEach(ep => {
+                const btn = document.createElement('button');
+                btn.className = 'endpoint-btn';
+                btn.dataset.id = ep.id;
+                btn.textContent = ep.label;
+                btn.title = ep.description || ep.id;
+                btn.addEventListener('click', () => {
+                    endpointNav.querySelectorAll('.endpoint-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentEndpoint = ep.id;
+                    status.innerHTML = `<span class="count">●</span> ${ep.label}`;
+                    // auto‑fetch on endpoint change
+                    fetchImage();
+                });
+                endpointNav.appendChild(btn);
+            });
+        }
+
+        // ----- fetch single image -----
+        async function fetchImage() {
+            if (!currentEndpoint) {
+                status.innerHTML = `<span class="error">✕</span> select an endpoint first`;
+                return;
+            }
+
+            const nsfw = nsfwToggle.checked;
+            status.innerHTML = `<span class="loading-dot"></span> fetching ...`;
+            fetchBtn.disabled = true;
+            downloadBtn.classList.remove('active');
+            downloadBtn.style.display = 'none';
+            imageContainer.innerHTML = `<span class="placeholder">loading...</span>`;
+
+            try {
+                const url = `${BASE}/api/anime?endpoint=${encodeURIComponent(currentEndpoint)}&nsfw=${nsfw}`;
+                const res = await fetch(url);
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || `HTTP ${res.status}`);
+                }
+                const data = await res.json();
+                if (!data.success || !data.image_url) {
+                    throw new Error('no image URL in response');
+                }
+                currentImageUrl = data.image_url;
+                // display image
+                imageContainer.innerHTML = `<img src="${currentImageUrl}" alt="anime image" />`;
+                downloadBtn.style.display = 'inline-block';
+                downloadBtn.classList.add('active');
+                status.innerHTML = `<span class="count">●</span> image loaded · ${currentEndpoint}`;
+            } catch (err) {
+                imageContainer.innerHTML = `<span class="placeholder" style="color:#ff6b6b;">⚠ ${err.message}</span>`;
+                status.innerHTML = `<span class="error">✕</span> ${err.message}`;
+                downloadBtn.classList.remove('active');
+                downloadBtn.style.display = 'none';
+            }
+            fetchBtn.disabled = false;
+        }
+
+        // ----- download -----
+        function downloadImage() {
+            if (!currentImageUrl) return;
+            const a = document.createElement('a');
+            a.href = currentImageUrl;
+            a.download = `anime_${Date.now()}.jpg`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        // ----- events -----
+        fetchBtn.addEventListener('click', fetchImage);
+        downloadBtn.addEventListener('click', downloadImage);
+        nsfwToggle.addEventListener('change', fetchImage);
+
+        // keyboard shortcut: 'r' to refresh
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                fetchImage();
+            }
+        });
+
+        // init
+        loadEndpoints();
+
+        console.log('🔥 SASUKE ANIME GALLERY');
+        console.log('📡 dev: sasuke');
+        console.log('💡 press R to refresh');
+    </script>
+</body>
+</html>
+"""
+
+# ---------- FINAL: RUN (unchanged) ----------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
