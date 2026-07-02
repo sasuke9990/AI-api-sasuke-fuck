@@ -558,12 +558,33 @@ ANIME_ENDPOINTS = {
         "label": "Cosplay",
         "description": "Anime cosplay images"
     },
-    # ADD MORE ENDPOINTS HERE – UI WILL AUTO‑UPDATE
-    # "new_anime": {
-    #     "url": "https://api.example.com/endpoint",
-    #     "label": "New Anime",
-    #     "description": "Description of new endpoint"
-    # },
+    # 🔥 YEH NAYA ENDPOINT ADD KAR
+    "pussy": {
+        "url": "https://felix-rdx-unlimited-free-apis.vercel.app/api/v1/api/nsfw/pussy",
+        "label": "Pussy",
+        "description": "18+ NSFW content"
+    },
+    # Aur bhi NSFW endpoints add kar sakta hai:
+    "milf": {
+        "url": "https://felix-rdx-unlimited-free-apis.vercel.app/api/v1/api/nsfw/milf",
+        "label": "Milf",
+        "description": "18+ NSFW content"
+    },
+    "yuri": {
+        "url": "https://felix-rdx-unlimited-free-apis.vercel.app/api/v1/api/nsfw/yuri",
+        "label": "Yuri",
+        "description": "18+ NSFW content"
+    },
+    "blowjob": {
+        "url": "https://felix-rdx-unlimited-free-apis.vercel.app/api/v1/api/nsfw/blowjob",
+        "label": "Blowjob",
+        "description": "18+ NSFW content"
+    },
+    "cuckold": {
+        "url": "https://felix-rdx-unlimited-free-apis.vercel.app/api/v1/api/nsfw/cuckold",
+        "label": "Cuckold",
+        "description": "18+ NSFW content"
+    }
 }
 
 # ---------- ANIME ROUTES ----------
